@@ -12,6 +12,11 @@ import {
   sanitizeContext,
   sanitizeConversation,
 } from "../../../lib/saju/gemini-contract";
+import {
+  buildLifetimePrompt,
+  lifetimeResponseSchema,
+  parseLifetimeReading,
+} from "../../../lib/saju/lifetime-reading";
 
 export const runtime = "nodejs";
 
@@ -21,7 +26,11 @@ type GeminiResponse = {
   }>;
 };
 
-async function callGemini(prompt: string, schema: Record<string, unknown>) {
+async function callGemini(
+  prompt: string,
+  schema: Record<string, unknown>,
+  maxOutputTokens = 2500,
+) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey)
     return {
@@ -46,7 +55,7 @@ async function callGemini(prompt: string, schema: Record<string, unknown>) {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.45,
-            maxOutputTokens: 2500,
+            maxOutputTokens,
             responseFormat: {
               text: { mimeType: "APPLICATION_JSON", schema },
             },
@@ -98,6 +107,20 @@ export async function POST(request: Request) {
   try {
     const raw = (await request.json()) as Record<string, unknown>;
     const chart = sanitizeChart(raw.chart);
+
+    if (raw.mode === "lifetime") {
+      const result = await callGemini(
+        buildLifetimePrompt(chart),
+        lifetimeResponseSchema,
+        4000,
+      );
+      if (result.error) return result.error;
+      return NextResponse.json({
+        model: GEMINI_MODEL,
+        reading: parseLifetimeReading(result.value, chart),
+      });
+    }
+
     const context = sanitizeContext(raw.context);
 
     if (raw.mode === "followup") {

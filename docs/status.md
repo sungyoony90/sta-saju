@@ -10,6 +10,6 @@ Spec을 만들면 아래 목록에 파일명을 추가합니다. 구현과 검�
 - [ ] `002-gemini-reading-storage.md`
 - [x] `003-google-sign-in.md`
 - [x] `004-saved-readings.md`
-- [ ] `005-lifetime-reading.md`
+- [x] `005-lifetime-reading.md`
 - [ ] `006-yearly-flow.md`
 - [ ] `007-reading-explainer.md`

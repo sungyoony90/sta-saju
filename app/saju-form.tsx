@@ -19,6 +19,10 @@ import type {
   GeminiReading,
 } from "../lib/saju/gemini-contract";
 import {
+  isLifetimeReading as isLifetimeReadingResult,
+  type LifetimeReading,
+} from "../lib/saju/lifetime-reading";
+import {
   buildSavedReadingInsert,
   parseSavedReading,
   type SavedReading,
@@ -36,6 +40,16 @@ const emptyContext: CareerContext = {
   question: "",
 };
 
+function savedReadingTitle(item: SavedReading) {
+  return isLifetimeReadingResult(item.reading)
+    ? item.reading.summary
+    : item.reading.conclusion;
+}
+
+function savedReadingKind(item: SavedReading) {
+  return isLifetimeReadingResult(item.reading) ? "내 사주 전체" : "기존 맞춤 풀이";
+}
+
 export default function SajuForm() {
   const supabase = useMemo(() => getSupabaseClient(), []);
   const [user, setUser] = useState<User | null>(null);
@@ -49,6 +63,9 @@ export default function SajuForm() {
   const [error, setError] = useState("");
   const [context, setContext] = useState<CareerContext>(emptyContext);
   const [reading, setReading] = useState<ReadingCard[]>([]);
+  const [lifetimeReading, setLifetimeReading] = useState<LifetimeReading | null>(null);
+  const [lifetimeError, setLifetimeError] = useState("");
+  const [isLifetimeLoading, setIsLifetimeLoading] = useState(false);
   const [readingError, setReadingError] = useState("");
   const [readingMeta, setReadingMeta] = useState<ReadingMeta | null>(null);
   const [modelName, setModelName] = useState("");
@@ -77,6 +94,8 @@ export default function SajuForm() {
         setSavedMessage("");
         setChart(null);
         setReading([]);
+        setLifetimeReading(null);
+        setLifetimeError("");
         setReadingMeta(null);
         setConversation([]);
         setContext(emptyContext);
@@ -142,22 +161,30 @@ export default function SajuForm() {
 
   function showSavedReading(item: SavedReading) {
     setChart(item.chart);
-    setReading(item.reading.cards.map((card) => ({
-      title: card.title,
-      summary: card.summary,
-      detail: card.evidence,
-      action: card.action,
-    })));
-    setReadingMeta({
-      conclusion: item.reading.conclusion,
-      realityChecks: item.reading.realityChecks,
-      disclaimer: item.reading.disclaimer,
-    });
+    if (isLifetimeReadingResult(item.reading)) {
+      setLifetimeReading(item.reading);
+      setReading([]);
+      setReadingMeta(null);
+    } else {
+      setLifetimeReading(null);
+      setReading(item.reading.cards.map((card) => ({
+        title: card.title,
+        summary: card.summary,
+        detail: card.evidence,
+        action: card.action,
+      })));
+      setReadingMeta({
+        conclusion: item.reading.conclusion,
+        realityChecks: item.reading.realityChecks,
+        disclaimer: item.reading.disclaimer,
+      });
+    }
     setModelName(item.model);
     setContext(emptyContext);
     setConversation([]);
     setFollowUp("");
     setReadingError("");
+    setLifetimeError("");
     setSavedMessage("저장된 해석을 열었습니다.");
     setActiveSavedId(item.id);
     setIsRestoredReading(true);
@@ -178,6 +205,7 @@ export default function SajuForm() {
     if (activeSavedId === id) {
       setChart(null);
       setReading([]);
+      setLifetimeReading(null);
       setReadingMeta(null);
       setActiveSavedId(null);
       setIsRestoredReading(false);
@@ -201,9 +229,11 @@ export default function SajuForm() {
       setError("");
       setContext(emptyContext);
       setReading([]);
+      setLifetimeReading(null);
       setReadingMeta(null);
       setModelName("");
       setReadingError("");
+      setLifetimeError("");
       setConversation([]);
       setFollowUp("");
       setSavedMessage("");
@@ -232,6 +262,62 @@ export default function SajuForm() {
     }
   }
 
+  async function handleLifetimeReading() {
+    if (!chart) return;
+    try {
+      setIsLifetimeLoading(true);
+      setLifetimeError("");
+      const response = await fetch("/api/readings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "lifetime", chart }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const payload = (await response.json()) as {
+        model: string;
+        reading: LifetimeReading;
+      };
+      setLifetimeReading(payload.reading);
+      setReading([]);
+      setReadingMeta(null);
+      setConversation([]);
+      setFollowUp("");
+      setModelName(payload.model);
+      setActiveSavedId(null);
+      setIsRestoredReading(false);
+
+      if (supabase && user) {
+        try {
+          const insert = buildSavedReadingInsert(chart, payload.reading, payload.model);
+          const { data: saved, error: saveError } = await supabase
+            .from("saju_readings")
+            .insert(insert)
+            .select("id, created_at, chart, reading, model")
+            .single();
+          if (saveError || !saved) throw new Error("save_failed");
+          const item = parseSavedReading(saved);
+          setSavedReadings((current) => [item, ...current].slice(0, 10));
+          setActiveSavedId(item.id);
+          setSavedMessage("내 사주 전체 풀이를 계정에 저장했습니다.");
+        } catch {
+          setSavedMessage("풀이는 나왔지만 계정에 저장하지 못했습니다.");
+        }
+      } else {
+        setSavedMessage("Google로 로그인하면 다음 풀이부터 계정에 저장됩니다.");
+      }
+    } catch (caught) {
+      setLifetimeReading(null);
+      setModelName("");
+      setLifetimeError(
+        caught instanceof Error
+          ? caught.message
+          : "내 사주 전체 풀이를 만들지 못했습니다. 다시 시도해주세요.",
+      );
+    } finally {
+      setIsLifetimeLoading(false);
+    }
+  }
+
   async function handleReading(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!chart) return;
@@ -257,6 +343,7 @@ export default function SajuForm() {
           action: card.action,
         })),
       );
+      setLifetimeReading(null);
       setReadingMeta({
         conclusion: payload.reading.conclusion,
         realityChecks: payload.reading.realityChecks,
@@ -388,8 +475,8 @@ export default function SajuForm() {
               {savedReadings.map((item) => (
                 <li key={item.id}>
                   <button type="button" className="saved-reading-open" onClick={() => showSavedReading(item)}>
-                    <span>{item.reading.conclusion}</span>
-                    <small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small>
+                    <span>{savedReadingTitle(item)}</span>
+                    <small>{savedReadingKind(item)} · {new Date(item.createdAt).toLocaleString("ko-KR")}</small>
                   </button>
                   <button type="button" className="secondary-button" onClick={() => void handleDeleteSavedReading(item.id)}>삭제</button>
                 </li>
@@ -436,6 +523,58 @@ export default function SajuForm() {
           </section>
         )}
       </div>
+
+      {chart && (
+        <section className="consultation" aria-labelledby="lifetime-title">
+          <p className="prototype-label">내 사주 전체</p>
+          <h2 id="lifetime-title">삶 전반의 기본 경향을 살펴보세요</h2>
+          <p className="form-intro">
+            취업 상태나 현재 고민을 묻지 않고, 계산된 출생 원국으로 성향·강점·관계·일·돈의 반복 경향을 설명합니다. 생년월일과 출생시간 원문은 Gemini에 보내지 않습니다.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleLifetimeReading()}
+            disabled={isLifetimeLoading}
+          >
+            {isLifetimeLoading ? "Gemini가 전체 풀이를 만들고 있어요…" : "내 사주 전체 보기"}
+          </button>
+
+          {lifetimeError && <p className="error">{lifetimeError}</p>}
+
+          {lifetimeReading && (
+            <section className="reading" aria-labelledby="lifetime-reading-title">
+              <div className="reading-heading">
+                <div>
+                  <p className="result-label">출생 원국을 바탕으로 한 Gemini 해석</p>
+                  <h2 id="lifetime-reading-title">내 사주 전체</h2>
+                </div>
+                <span className="sample-badge">{modelName || "GEMINI"}</span>
+              </div>
+
+              <div className="reading-summary">
+                <strong>{lifetimeReading.summary}</strong>
+              </div>
+
+              <div className="reading-grid lifetime-grid">
+                {lifetimeReading.cards.map((card) => (
+                  <article className="reading-card" key={card.id}>
+                    <h3>{card.title}</h3>
+                    <p>{card.interpretation}</p>
+                    <div className="lifetime-evidence">
+                      <strong>계산 근거</strong>
+                      <ul>
+                        {card.evidence.map((item) => <li key={item}>{item}</li>)}
+                      </ul>
+                    </div>
+                    <p className="action">현실에서 확인하기: {card.reflectionQuestion}</p>
+                  </article>
+                ))}
+              </div>
+              <p className="note">{lifetimeReading.disclaimer}</p>
+            </section>
+          )}
+        </section>
+      )}
 
       {chart && (
         <section className="consultation" aria-labelledby="consultation-title">

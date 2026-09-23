@@ -5,18 +5,25 @@ import {
   sanitizeChart,
   type GeminiReading,
 } from "./gemini-contract";
+import {
+  isLifetimeReading,
+  parseLifetimeReading,
+  type LifetimeReading,
+} from "./lifetime-reading";
+
+export type StoredReading = GeminiReading | LifetimeReading;
 
 export type SavedReading = {
   id: string;
   createdAt: string;
   chart: SajuChart;
-  reading: GeminiReading;
+  reading: StoredReading;
   model: string;
 };
 
 export function buildSavedReadingInsert(
   chart: SajuChart,
-  reading: GeminiReading,
+  reading: StoredReading,
   model: string,
 ) {
   const safeModel = model.trim();
@@ -25,7 +32,9 @@ export function buildSavedReadingInsert(
 
   return {
     chart: sanitizeChart(chart),
-    reading: parseGeminiReading(reading),
+    reading: isLifetimeReading(reading)
+      ? parseLifetimeReading(reading, chart)
+      : parseGeminiReading(reading),
     model: safeModel,
   };
 }
@@ -49,7 +58,9 @@ export function parseSavedReading(value: unknown): SavedReading {
     id: row.id,
     createdAt: row.created_at,
     chart: sanitizeChart(row.chart),
-    reading: parseGeminiReading(row.reading),
+    reading: isLifetimeReading(row.reading)
+      ? parseLifetimeReading(row.reading, row.chart)
+      : parseGeminiReading(row.reading),
     model: row.model.trim(),
   };
 }

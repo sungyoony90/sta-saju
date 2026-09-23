@@ -308,6 +308,26 @@ summary:focus-visible {
   line-height: 1.75;
 }
 
+.lifetime-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lifetime-grid .reading-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.lifetime-evidence {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  line-height: 1.65;
+}
+
+.lifetime-evidence ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
 .action {
   padding: 14px 16px;
   border-left: 3px solid var(--gold);
@@ -448,6 +468,14 @@ summary {
 
   .pillars {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .lifetime-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lifetime-grid .reading-card:last-child {
+    grid-column: auto;
   }
 }
 
