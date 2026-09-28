@@ -12,6 +12,17 @@ import {
   sanitizeContext,
   sanitizeConversation,
 } from "../../../lib/saju/gemini-contract";
+import {
+  calculateYearFlow,
+  getKoreanCurrentYear,
+  getKoreanDate,
+  YearFlowError,
+} from "../../../lib/saju/year-flow";
+import {
+  buildYearlyReadingPrompt,
+  parseYearlyReading,
+  yearlyReadingResponseSchema,
+} from "../../../lib/saju/yearly-reading";
 
 export const runtime = "nodejs";
 
@@ -98,6 +109,25 @@ export async function POST(request: Request) {
   try {
     const raw = (await request.json()) as Record<string, unknown>;
     const chart = sanitizeChart(raw.chart);
+
+    if (raw.mode === "yearly") {
+      const now = new Date();
+      const currentYear = getKoreanCurrentYear(now);
+      const date = getKoreanDate(now);
+      const yearFlow = calculateYearFlow(raw.targetYear, currentYear);
+      const today = `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+      const result = await callGemini(
+        buildYearlyReadingPrompt(chart, yearFlow, currentYear, today),
+        yearlyReadingResponseSchema,
+      );
+      if (result.error) return result.error;
+      return NextResponse.json({
+        model: GEMINI_MODEL,
+        yearFlow,
+        reading: parseYearlyReading(result.value, yearFlow),
+      });
+    }
+
     const context = sanitizeContext(raw.context);
 
     if (raw.mode === "followup") {
@@ -131,7 +161,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message =
-      error instanceof GeminiContractError
+      error instanceof GeminiContractError || error instanceof YearFlowError
         ? error.message
         : "요청 내용을 확인해주세요.";
     return NextResponse.json({ code: "invalid_request", error: message }, { status: 400 });

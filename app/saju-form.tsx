@@ -19,6 +19,12 @@ import type {
   GeminiReading,
 } from "../lib/saju/gemini-contract";
 import {
+  calculateYearFlow,
+  getKoreanCurrentYear,
+  type YearFlow,
+} from "../lib/saju/year-flow";
+import type { YearlyReading } from "../lib/saju/yearly-reading";
+import {
   buildSavedReadingInsert,
   parseSavedReading,
   type SavedReading,
@@ -27,6 +33,7 @@ import { getSupabaseClient } from "../lib/supabase/client";
 
 type Conversation = { question: string; answer: string };
 type ReadingMeta = Pick<GeminiReading, "conclusion" | "realityChecks" | "disclaimer">;
+type ReadingView = "career" | "yearly";
 
 const emptyContext: CareerContext = {
   employment: "",
@@ -56,6 +63,10 @@ export default function SajuForm() {
   const [isFollowingUp, setIsFollowingUp] = useState(false);
   const [followUp, setFollowUp] = useState("");
   const [conversation, setConversation] = useState<Conversation[]>([]);
+  const currentYear = useMemo(() => getKoreanCurrentYear(), []);
+  const [readingView, setReadingView] = useState<ReadingView>("career");
+  const [targetYear, setTargetYear] = useState(currentYear);
+  const [yearFlow, setYearFlow] = useState<YearFlow | null>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -83,13 +94,16 @@ export default function SajuForm() {
         setFollowUp("");
         setActiveSavedId(null);
         setIsRestoredReading(false);
+        setReadingView("career");
+        setTargetYear(currentYear);
+        setYearFlow(null);
       }
     });
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [currentYear, supabase]);
 
   const loadSavedReadings = useCallback(async () => {
     if (!supabase || !user) {
@@ -161,6 +175,14 @@ export default function SajuForm() {
     setSavedMessage("저장된 해석을 열었습니다.");
     setActiveSavedId(item.id);
     setIsRestoredReading(true);
+    setReadingView(item.kind);
+    if (item.kind === "yearly" && item.targetYear) {
+      setTargetYear(item.targetYear);
+      // 저장된 과거 연도도 다음 해에 계속 열 수 있어야 하므로 저장 연도를 기준으로 복원합니다.
+      setYearFlow(calculateYearFlow(item.targetYear, item.targetYear));
+    } else {
+      setYearFlow(null);
+    }
   }
 
   async function handleDeleteSavedReading(id: string) {
@@ -181,6 +203,9 @@ export default function SajuForm() {
       setReadingMeta(null);
       setActiveSavedId(null);
       setIsRestoredReading(false);
+      setReadingView("career");
+      setTargetYear(currentYear);
+      setYearFlow(null);
     }
     setSavedMessage("저장된 결과를 삭제했습니다.");
   }
@@ -209,6 +234,9 @@ export default function SajuForm() {
       setSavedMessage("");
       setActiveSavedId(null);
       setIsRestoredReading(false);
+      setReadingView("career");
+      setTargetYear(currentYear);
+      setYearFlow(null);
     } catch (caught) {
       setChart(null);
       setError(
@@ -308,6 +336,106 @@ export default function SajuForm() {
     }
   }
 
+  function changeReadingView(view: ReadingView) {
+    setReadingView(view);
+    setReading([]);
+    setReadingMeta(null);
+    setReadingError("");
+    setModelName("");
+    setConversation([]);
+    setFollowUp("");
+    setSavedMessage("");
+    setActiveSavedId(null);
+    setIsRestoredReading(false);
+    setYearFlow(null);
+  }
+
+  function changeTargetYear(year: number) {
+    setTargetYear(year);
+    setReading([]);
+    setReadingMeta(null);
+    setReadingError("");
+    setModelName("");
+    setSavedMessage("");
+    setActiveSavedId(null);
+    setIsRestoredReading(false);
+    setYearFlow(null);
+  }
+
+  async function handleYearlyReading(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!chart) return;
+    try {
+      const calculatedYear = calculateYearFlow(targetYear, currentYear);
+      setIsReading(true);
+      setReadingError("");
+      const response = await fetch("/api/readings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "yearly", chart, targetYear }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const payload = (await response.json()) as {
+        model: string;
+        yearFlow: YearFlow;
+        reading: YearlyReading;
+      };
+      setYearFlow(payload.yearFlow);
+      setReading(
+        payload.reading.cards.map((card) => ({
+          title: card.title,
+          summary: card.summary,
+          detail: card.evidence,
+          action: card.action,
+        })),
+      );
+      setReadingMeta({
+        conclusion: payload.reading.conclusion,
+        realityChecks: payload.reading.realityChecks,
+        disclaimer: payload.reading.disclaimer,
+      });
+      setModelName(payload.model);
+      setActiveSavedId(null);
+      setIsRestoredReading(false);
+
+      if (supabase && user) {
+        try {
+          const insert = buildSavedReadingInsert(
+            chart,
+            payload.reading,
+            payload.model,
+          );
+          const { data: saved, error: saveError } = await supabase
+            .from("saju_readings")
+            .insert(insert)
+            .select("id, created_at, chart, reading, model")
+            .single();
+          if (saveError || !saved) throw new Error("save_failed");
+          const item = parseSavedReading(saved);
+          setSavedReadings((current) => [item, ...current].slice(0, 10));
+          setActiveSavedId(item.id);
+          setSavedMessage(`${calculatedYear.targetYear}년 풀이를 계정에 저장했습니다.`);
+        } catch {
+          setSavedMessage("연도 풀이는 나왔지만 계정에 저장하지 못했습니다.");
+        }
+      } else {
+        setSavedMessage("Google로 로그인하면 다음 연도 풀이부터 계정에 저장됩니다.");
+      }
+    } catch (caught) {
+      setReading([]);
+      setReadingMeta(null);
+      setYearFlow(null);
+      setModelName("");
+      setReadingError(
+        caught instanceof Error
+          ? caught.message
+          : "연도 풀이를 만들지 못했습니다. 다시 시도해주세요.",
+      );
+    } finally {
+      setIsReading(false);
+    }
+  }
+
   async function handleFollowUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!chart || isRestoredReading || conversation.length >= 3) return;
@@ -388,7 +516,10 @@ export default function SajuForm() {
               {savedReadings.map((item) => (
                 <li key={item.id}>
                   <button type="button" className="saved-reading-open" onClick={() => showSavedReading(item)}>
-                    <span>{item.reading.conclusion}</span>
+                    <span>
+                      {item.kind === "yearly" ? `${item.targetYear}년 흐름 · ` : "맞춤 상담 · "}
+                      {item.reading.conclusion}
+                    </span>
                     <small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small>
                   </button>
                   <button type="button" className="secondary-button" onClick={() => void handleDeleteSavedReading(item.id)}>삭제</button>
@@ -438,6 +569,102 @@ export default function SajuForm() {
       </div>
 
       {chart && (
+        <nav className="reading-tabs" aria-label="풀이 종류">
+          <button
+            type="button"
+            className={readingView === "career" ? "active" : "secondary-button"}
+            aria-pressed={readingView === "career"}
+            onClick={() => changeReadingView("career")}
+          >
+            맞춤 상담
+          </button>
+          <button
+            type="button"
+            className={readingView === "yearly" ? "active" : "secondary-button"}
+            aria-pressed={readingView === "yearly"}
+            onClick={() => changeReadingView("yearly")}
+          >
+            앞으로의 흐름
+          </button>
+        </nav>
+      )}
+
+      {chart && readingView === "yearly" && (
+        <section className="consultation" aria-labelledby="yearly-title">
+          <p className="prototype-label">올해와 선택 연도의 흐름</p>
+          <h2 id="yearly-title">어느 해의 흐름을 살펴볼까요?</h2>
+          <p className="form-intro">
+            올해부터 5년 뒤까지 한 해를 선택할 수 있습니다. 올해는 한국 시각 기준
+            오늘 이후만 설명하며, 특정 날짜의 사건이나 결과를 단정하지 않습니다.
+          </p>
+
+          <form onSubmit={handleYearlyReading} className="context-form">
+            <label htmlFor="target-year">대상 연도</label>
+            <select
+              id="target-year"
+              value={targetYear}
+              onChange={(event) => changeTargetYear(Number(event.target.value))}
+            >
+              {Array.from({ length: 6 }, (_, index) => currentYear + index).map((year) => (
+                <option key={year} value={year}>
+                  {year}년{year === currentYear ? " · 오늘 이후" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="note">
+              연주의 해 경계는 음력 설이 아니라 절기인 입춘입니다.
+            </p>
+            <button type="submit" disabled={isReading}>
+              {isReading ? "Gemini가 흐름을 살펴보고 있어요…" : `${targetYear}년 흐름 보기`}
+            </button>
+          </form>
+
+          {readingError && <p className="error">{readingError}</p>}
+
+          {reading.length > 0 && readingMeta && (
+            <section className="reading" aria-labelledby="yearly-reading-title">
+              <div className="reading-heading">
+                <div>
+                  <p className="result-label">
+                    {targetYear === currentYear ? `${targetYear}년 · 오늘 이후의 흐름` : `${targetYear}년의 흐름`}
+                  </p>
+                  <h2 id="yearly-reading-title">{targetYear}년 흐름</h2>
+                  {yearFlow && (
+                    <p className="note">
+                      대상 연주 {yearFlow.pillar}({yearFlow.korean}) · 입춘 기준
+                    </p>
+                  )}
+                </div>
+                <span className="sample-badge">{modelName || "GEMINI"}</span>
+              </div>
+
+              <div className="reading-summary">
+                <strong>{readingMeta.conclusion}</strong>
+                <ul>
+                  {readingMeta.realityChecks.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+
+              <div className="reading-grid">
+                {reading.map((card) => (
+                  <article className="reading-card" key={card.title}>
+                    <h3>{card.title}</h3>
+                    <p>{card.summary}</p>
+                    <p className="action">현실 점검: {card.action}</p>
+                    <details>
+                      <summary>왜 이렇게 읽었나요?</summary>
+                      <p>{card.detail}</p>
+                    </details>
+                  </article>
+                ))}
+              </div>
+              <p className="note">{readingMeta.disclaimer}</p>
+            </section>
+          )}
+        </section>
+      )}
+
+      {chart && readingView === "career" && (
         <section className="consultation" aria-labelledby="consultation-title">
           <p className="prototype-label">Gemini 맞춤 사주 해석</p>
           <h2 id="consultation-title">지금 어떤 변화를 고민하고 있나요?</h2>
