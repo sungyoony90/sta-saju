@@ -429,6 +429,99 @@ summary {
   font-size: 24px;
 }
 
+.subheading {
+  margin: 30px 0 12px;
+  font-size: 18px;
+}
+
+.elements {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.elements div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 6px;
+  border-radius: 10px;
+  background: var(--soft);
+  text-align: center;
+}
+
+.elements strong {
+  font-size: 22px;
+}
+
+.element-dots {
+  min-height: 16px;
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.glossary dl {
+  display: grid;
+  gap: 12px;
+}
+
+.glossary dl div {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 12px;
+}
+
+.glossary dt {
+  font-weight: 800;
+}
+
+.glossary dd {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.reading-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 24px 0;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--soft);
+}
+
+.reading-tabs button {
+  margin: 0;
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+}
+
+.reading-tabs button[aria-selected="true"] {
+  color: var(--surface);
+  background: var(--accent);
+}
+
+.year-picker {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.today-forward,
+.reality-check {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #eef5f0;
+  line-height: 1.7;
+}
+
+.evidence-refs {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .note {
   font-size: 14px;
 }
@@ -448,6 +541,14 @@ summary {
 
   .pillars {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .elements {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .element-dots {
+    overflow-wrap: anywhere;
   }
 }
 
