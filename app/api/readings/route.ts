@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import {
   buildFollowUpPrompt,
+  buildDailyFortunePrompt,
   buildReadingPrompt,
+  dailyFortuneResponseSchema,
   followUpResponseSchema,
   GEMINI_MODEL,
   GeminiContractError,
   parseGeminiFollowUp,
+  parseGeminiDailyFortune,
   parseGeminiReading,
   readingResponseSchema,
   sanitizeChart,
   sanitizeContext,
   sanitizeConversation,
 } from "../../../lib/saju/gemini-contract";
+import { getTodayFortuneContext } from "../../../lib/saju/daily-fortune";
 
 export const runtime = "nodejs";
 
@@ -98,6 +102,21 @@ export async function POST(request: Request) {
   try {
     const raw = (await request.json()) as Record<string, unknown>;
     const chart = sanitizeChart(raw.chart);
+
+    if (raw.mode === "daily") {
+      const daily = getTodayFortuneContext();
+      const result = await callGemini(
+        buildDailyFortunePrompt(chart, daily),
+        dailyFortuneResponseSchema,
+      );
+      if (result.error) return result.error;
+      return NextResponse.json({
+        model: GEMINI_MODEL,
+        daily,
+        fortune: parseGeminiDailyFortune(result.value),
+      });
+    }
+
     const context = sanitizeContext(raw.context);
 
     if (raw.mode === "followup") {
