@@ -206,3 +206,22 @@ export function calculate(raw: SajuInput): SajuChart {
       "천간과 지지의 대표 오행 8자를 센 값입니다. 지장간과 계절 가중치를 반영한 강약 판단은 아닙니다.",
   };
 }
+
+export function calculateDayPillar(date: string): Pillar {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+    throw new InputError("오늘 날짜 형식을 확인해주세요.", "date");
+  const [year, month, day] = date.split("-").map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== month - 1 ||
+    check.getUTCDate() !== day
+  )
+    throw new InputError("실제로 존재하는 오늘 날짜가 아닙니다.", "date");
+
+  const eightChar = Solar.fromYmdHms(year, month, day, 12, 0, 0)
+    .getLunar()
+    .getEightChar();
+  eightChar.setSect(1);
+  return pillar("오늘의 일진", eightChar.getDay());
+}
