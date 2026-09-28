@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "맞춤 사주 커리어 상담",
-  description: "사주와 현재 상황을 함께 반영하는 커리어 상담 프로토타입",
+  title: "오늘의 운세 · 맞춤 사주",
+  description: "계산된 사주와 한국 시간의 오늘 일진을 함께 보는 맞춤 운세",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
