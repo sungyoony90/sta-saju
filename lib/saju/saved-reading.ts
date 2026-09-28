@@ -5,18 +5,23 @@ import {
   sanitizeChart,
   type GeminiReading,
 } from "./gemini-contract";
+import { parseYearlyReading, type YearlyReading } from "./yearly-reading";
+
+export type StoredReading = GeminiReading | YearlyReading;
 
 export type SavedReading = {
   id: string;
   createdAt: string;
   chart: SajuChart;
-  reading: GeminiReading;
+  reading: StoredReading;
   model: string;
+  kind: "career" | "yearly";
+  targetYear?: number;
 };
 
 export function buildSavedReadingInsert(
   chart: SajuChart,
-  reading: GeminiReading,
+  reading: StoredReading,
   model: string,
 ) {
   const safeModel = model.trim();
@@ -25,7 +30,10 @@ export function buildSavedReadingInsert(
 
   return {
     chart: sanitizeChart(chart),
-    reading: parseGeminiReading(reading),
+    reading:
+      "kind" in reading && reading.kind === "yearly"
+        ? parseYearlyReading(reading)
+        : parseGeminiReading(reading),
     model: safeModel,
   };
 }
@@ -45,11 +53,24 @@ export function parseSavedReading(value: unknown): SavedReading {
   if (typeof row.model !== "string" || !row.model.trim())
     throw new GeminiContractError("저장된 모델 정보가 없습니다.");
 
+  const reading =
+    typeof row.reading === "object" &&
+    row.reading !== null &&
+    "kind" in row.reading &&
+    row.reading.kind === "yearly"
+      ? parseYearlyReading(row.reading)
+      : parseGeminiReading(row.reading);
+
   return {
     id: row.id,
     createdAt: row.created_at,
     chart: sanitizeChart(row.chart),
-    reading: parseGeminiReading(row.reading),
+    reading,
     model: row.model.trim(),
+    kind: "kind" in reading && reading.kind === "yearly" ? "yearly" : "career",
+    targetYear:
+      "kind" in reading && reading.kind === "yearly"
+        ? reading.targetYear
+        : undefined,
   };
 }

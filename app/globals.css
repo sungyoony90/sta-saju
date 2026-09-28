@@ -245,6 +245,30 @@ summary:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.reading-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 40px;
+  padding: 8px;
+  border: 1px solid #eadbd2;
+  border-radius: 16px;
+  background: #fffdf9;
+}
+
+.reading-tabs button {
+  min-height: 48px;
+  margin: 0;
+}
+
+.reading-tabs .secondary-button {
+  border-color: transparent;
+}
+
+.reading-tabs .active {
+  box-shadow: 0 6px 18px rgba(143, 63, 45, 0.18);
+}
+
 .context-form {
   margin-top: 28px;
 }
