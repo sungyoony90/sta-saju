@@ -193,6 +193,24 @@ input {
   background: var(--surface);
 }
 
+.birth-date-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.birth-date-inputs input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.birth-date-inputs span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 select,
 textarea {
   width: 100%;

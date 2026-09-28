@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   calculate,
@@ -20,6 +29,11 @@ import type {
   GeminiReading,
 } from "../lib/saju/gemini-contract";
 import type { DailyFortuneContext } from "../lib/saju/daily-fortune";
+import {
+  formatBirthDate,
+  normalizeDatePart,
+  splitPastedBirthDate,
+} from "../lib/saju/date-input";
 import {
   isLifetimeReading as isLifetimeReadingResult,
   type LifetimeReading,
@@ -83,6 +97,12 @@ export default function SajuForm() {
   const [dailyResult, setDailyResult] = useState<DailyResult | null>(null);
   const [dailyError, setDailyError] = useState("");
   const [isDailyLoading, setIsDailyLoading] = useState(false);
+  const [birthYear, setBirthYear] = useState("");
+  const [birthMonth, setBirthMonth] = useState("");
+  const [birthDay, setBirthDay] = useState("");
+  const yearInputRef = useRef<HTMLInputElement>(null);
+  const monthInputRef = useRef<HTMLInputElement>(null);
+  const dayInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -233,7 +253,7 @@ export default function SajuForm() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const input: SajuInput = {
-      date: String(data.get("date") || ""),
+      date: formatBirthDate(birthYear, birthMonth, birthDay),
       time: String(data.get("time") || ""),
       calendar: "solar",
       topic: "general",
@@ -264,6 +284,25 @@ export default function SajuForm() {
           ? caught.message
           : "계산하지 못했습니다. 입력을 확인해주세요.",
       );
+    }
+  }
+
+  function handleBirthDatePaste(event: ClipboardEvent<HTMLInputElement>) {
+    const parts = splitPastedBirthDate(event.clipboardData.getData("text"));
+    if (!parts) return;
+    event.preventDefault();
+    setBirthYear(parts.year);
+    setBirthMonth(parts.month);
+    setBirthDay(parts.day);
+    dayInputRef.current?.focus();
+  }
+
+  function focusPreviousDatePart(
+    event: KeyboardEvent<HTMLInputElement>,
+    previous: HTMLInputElement | null,
+  ) {
+    if (event.key === "Backspace" && event.currentTarget.value === "") {
+      previous?.focus();
     }
   }
 
@@ -533,8 +572,58 @@ export default function SajuForm() {
       <h2 id="input-title">언제 태어나셨나요?</h2>
       <p className="form-intro">양력 생년월일과 태어난 시간을 입력해주세요.</p>
       <form onSubmit={handleSubmit}>
-        <label htmlFor="date">생년월일</label>
-        <input id="date" name="date" type="date" required />
+        <label id="birth-date-label">생년월일</label>
+        <div className="birth-date-inputs" role="group" aria-labelledby="birth-date-label">
+          <input
+            ref={yearInputRef}
+            id="birth-year"
+            aria-label="태어난 연도 4자리"
+            inputMode="numeric"
+            autoComplete="bday-year"
+            placeholder="YYYY"
+            maxLength={4}
+            value={birthYear}
+            onPaste={handleBirthDatePaste}
+            onChange={(event) => {
+              const value = normalizeDatePart(event.target.value, 4);
+              setBirthYear(value);
+              if (value.length === 4) monthInputRef.current?.focus();
+            }}
+            required
+          />
+          <span aria-hidden="true">-</span>
+          <input
+            ref={monthInputRef}
+            id="birth-month"
+            aria-label="태어난 월 2자리"
+            inputMode="numeric"
+            autoComplete="bday-month"
+            placeholder="MM"
+            maxLength={2}
+            value={birthMonth}
+            onKeyDown={(event) => focusPreviousDatePart(event, yearInputRef.current)}
+            onChange={(event) => {
+              const value = normalizeDatePart(event.target.value, 2);
+              setBirthMonth(value);
+              if (value.length === 2) dayInputRef.current?.focus();
+            }}
+            required
+          />
+          <span aria-hidden="true">-</span>
+          <input
+            ref={dayInputRef}
+            id="birth-day"
+            aria-label="태어난 일 2자리"
+            inputMode="numeric"
+            autoComplete="bday-day"
+            placeholder="DD"
+            maxLength={2}
+            value={birthDay}
+            onKeyDown={(event) => focusPreviousDatePart(event, monthInputRef.current)}
+            onChange={(event) => setBirthDay(normalizeDatePart(event.target.value, 2))}
+            required
+          />
+        </div>
 
         <label htmlFor="time">출생시간</label>
         <input id="time" name="time" type="time" required />
