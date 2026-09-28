@@ -1,5 +1,6 @@
 import type { SajuChart } from "./chart";
 import type { CareerContext } from "./sample-reading";
+import type { DailyFortuneContext } from "./daily-fortune";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
@@ -20,6 +21,20 @@ export type GeminiReading = {
 export type GeminiFollowUp = {
   answer: string;
   realityChecks: string[];
+  disclaimer: string;
+};
+
+export type GeminiDailyFortune = {
+  version: 1;
+  headline: string;
+  cards: Array<{
+    id: "overall" | "workMoney" | "relationship";
+    title: string;
+    summary: string;
+    evidence: string;
+    action: string;
+  }>;
+  caution: string;
   disclaimer: string;
 };
 
@@ -170,6 +185,38 @@ export function parseGeminiFollowUp(value: unknown): GeminiFollowUp {
   };
 }
 
+export function parseGeminiDailyFortune(value: unknown): GeminiDailyFortune {
+  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.cards))
+    throw new GeminiContractError("오늘의 운세 결과 형식이 올바르지 않습니다.");
+  if (value.cards.length !== 3)
+    throw new GeminiContractError("오늘의 운세 카드가 세 개가 아닙니다.");
+
+  const allowed = new Set(["overall", "workMoney", "relationship"]);
+  const seen = new Set<string>();
+  const cards = value.cards.map((card) => {
+    if (!isRecord(card) || typeof card.id !== "string" || !allowed.has(card.id))
+      throw new GeminiContractError("오늘의 운세 카드 종류가 올바르지 않습니다.");
+    if (seen.has(card.id))
+      throw new GeminiContractError("오늘의 운세 카드 종류가 중복되었습니다.");
+    seen.add(card.id);
+    return {
+      id: card.id as "overall" | "workMoney" | "relationship",
+      title: responseString(card.title, "오늘의 운세 카드 제목", 80),
+      summary: responseString(card.summary, "오늘의 운세 카드 요약", 1000),
+      evidence: responseString(card.evidence, "오늘의 운세 계산 근거", 1000),
+      action: responseString(card.action, "오늘의 행동", 500),
+    };
+  });
+
+  return {
+    version: 1,
+    headline: responseString(value.headline, "오늘의 한 줄 운세", 300),
+    cards,
+    caution: responseString(value.caution, "오늘의 주의점", 500),
+    disclaimer: responseString(value.disclaimer, "참고 안내", 500),
+  };
+}
+
 function chartPrompt(chart: SajuChart) {
   return JSON.stringify({
     pillars: chart.pillars.map((item) => ({
@@ -207,6 +254,39 @@ ${chartPrompt(chart)}
 ${JSON.stringify(context)}
 
 career, core, timing 카드 세 개로 맞춤 해석을 작성하세요.`;
+}
+
+export function buildDailyFortunePrompt(
+  chart: SajuChart,
+  daily: DailyFortuneContext,
+) {
+  return `당신은 사주 계산기가 아니라, 서버에서 계산한 출생 원국과 오늘 일진을 쉬운 한국어로 설명하는 오늘의 운세 도우미입니다.
+
+[반드시 지킬 규칙]
+- 입력에 있는 출생 원국과 오늘 일진만 사용하고 날짜나 사주를 다시 계산하거나 바꾸지 마세요.
+- 오늘 하루의 경향을 제안하되 사건, 행운, 수익, 관계 결과를 사실처럼 보장하지 마세요.
+- 사용자가 오늘 현실에서 확인하거나 실행할 수 있는 구체적인 행동을 제시하세요.
+- 각 카드의 evidence에는 어떤 원국 요소와 오늘 일진을 연결했는지 쉬운 말로 밝히세요.
+- 오행 개수만으로 강약이나 길흉을 확정하지 마세요.
+- 입력에 없는 실제 경험이나 사건을 지어내지 마세요.
+- 출력은 지정된 JSON 구조만 사용하세요.
+
+[출생 원국 계산 결과]
+${chartPrompt(chart)}
+
+[오늘 계산 결과]
+${JSON.stringify({
+  date: daily.date,
+  timezone: daily.timezone,
+  dayPillar: {
+    text: daily.dayPillar.text,
+    korean: daily.dayPillar.korean,
+    stemElement: daily.dayPillar.stemElement,
+    branchElement: daily.dayPillar.branchElement,
+  },
+})}
+
+overall, workMoney, relationship 카드 세 개로 오늘의 운세를 작성하세요.`;
 }
 
 export function buildFollowUpPrompt(
@@ -273,4 +353,34 @@ export const followUpResponseSchema = {
     disclaimer: { type: "string" },
   },
   required: ["answer", "realityChecks", "disclaimer"],
+};
+
+export const dailyFortuneResponseSchema = {
+  type: "object",
+  properties: {
+    version: { type: "integer", enum: [1] },
+    headline: { type: "string" },
+    cards: {
+      type: "array",
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            enum: ["overall", "workMoney", "relationship"],
+          },
+          title: { type: "string" },
+          summary: { type: "string" },
+          evidence: { type: "string" },
+          action: { type: "string" },
+        },
+        required: ["id", "title", "summary", "evidence", "action"],
+      },
+    },
+    caution: { type: "string" },
+    disclaimer: { type: "string" },
+  },
+  required: ["version", "headline", "cards", "caution", "disclaimer"],
 };

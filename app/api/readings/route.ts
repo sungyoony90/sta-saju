@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import {
   buildFollowUpPrompt,
+  buildDailyFortunePrompt,
   buildReadingPrompt,
+  dailyFortuneResponseSchema,
   followUpResponseSchema,
   GEMINI_MODEL,
   GeminiContractError,
   parseGeminiFollowUp,
+  parseGeminiDailyFortune,
   parseGeminiReading,
   readingResponseSchema,
   sanitizeChart,
@@ -17,6 +20,7 @@ import {
   lifetimeResponseSchema,
   parseLifetimeReading,
 } from "../../../lib/saju/lifetime-reading";
+import { getTodayFortuneContext } from "../../../lib/saju/daily-fortune";
 
 export const runtime = "nodejs";
 
@@ -118,6 +122,20 @@ export async function POST(request: Request) {
       return NextResponse.json({
         model: GEMINI_MODEL,
         reading: parseLifetimeReading(result.value, chart),
+      });
+    }
+
+    if (raw.mode === "daily") {
+      const daily = getTodayFortuneContext();
+      const result = await callGemini(
+        buildDailyFortunePrompt(chart, daily),
+        dailyFortuneResponseSchema,
+      );
+      if (result.error) return result.error;
+      return NextResponse.json({
+        model: GEMINI_MODEL,
+        daily,
+        fortune: parseGeminiDailyFortune(result.value),
       });
     }
 

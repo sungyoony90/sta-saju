@@ -15,9 +15,11 @@ import {
   type ReadingCard,
 } from "../lib/saju/sample-reading";
 import type {
+  GeminiDailyFortune,
   GeminiFollowUp,
   GeminiReading,
 } from "../lib/saju/gemini-contract";
+import type { DailyFortuneContext } from "../lib/saju/daily-fortune";
 import {
   isLifetimeReading as isLifetimeReadingResult,
   type LifetimeReading,
@@ -31,6 +33,11 @@ import { getSupabaseClient } from "../lib/supabase/client";
 
 type Conversation = { question: string; answer: string };
 type ReadingMeta = Pick<GeminiReading, "conclusion" | "realityChecks" | "disclaimer">;
+type DailyResult = {
+  daily: DailyFortuneContext;
+  fortune: GeminiDailyFortune;
+  model: string;
+};
 
 const emptyContext: CareerContext = {
   employment: "",
@@ -73,6 +80,9 @@ export default function SajuForm() {
   const [isFollowingUp, setIsFollowingUp] = useState(false);
   const [followUp, setFollowUp] = useState("");
   const [conversation, setConversation] = useState<Conversation[]>([]);
+  const [dailyResult, setDailyResult] = useState<DailyResult | null>(null);
+  const [dailyError, setDailyError] = useState("");
+  const [isDailyLoading, setIsDailyLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -102,6 +112,8 @@ export default function SajuForm() {
         setFollowUp("");
         setActiveSavedId(null);
         setIsRestoredReading(false);
+        setDailyResult(null);
+        setDailyError("");
       }
     });
     return () => {
@@ -188,6 +200,8 @@ export default function SajuForm() {
     setSavedMessage("저장된 해석을 열었습니다.");
     setActiveSavedId(item.id);
     setIsRestoredReading(true);
+    setDailyResult(null);
+    setDailyError("");
   }
 
   async function handleDeleteSavedReading(id: string) {
@@ -209,6 +223,8 @@ export default function SajuForm() {
       setReadingMeta(null);
       setActiveSavedId(null);
       setIsRestoredReading(false);
+      setDailyResult(null);
+      setDailyError("");
     }
     setSavedMessage("저장된 결과를 삭제했습니다.");
   }
@@ -239,6 +255,8 @@ export default function SajuForm() {
       setSavedMessage("");
       setActiveSavedId(null);
       setIsRestoredReading(false);
+      setDailyResult(null);
+      setDailyError("");
     } catch (caught) {
       setChart(null);
       setError(
@@ -315,6 +333,31 @@ export default function SajuForm() {
       );
     } finally {
       setIsLifetimeLoading(false);
+    }
+  }
+
+  async function handleDailyFortune() {
+    if (!chart) return;
+    try {
+      setIsDailyLoading(true);
+      setDailyError("");
+      const response = await fetch("/api/readings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "daily", chart }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const payload = (await response.json()) as DailyResult;
+      setDailyResult(payload);
+    } catch (caught) {
+      setDailyResult(null);
+      setDailyError(
+        caught instanceof Error
+          ? caught.message
+          : "오늘의 운세를 만들지 못했습니다. 다시 시도해주세요.",
+      );
+    } finally {
+      setIsDailyLoading(false);
     }
   }
 
@@ -571,6 +614,61 @@ export default function SajuForm() {
                 ))}
               </div>
               <p className="note">{lifetimeReading.disclaimer}</p>
+            </section>
+          )}
+        </section>
+      )}
+
+      {chart && (
+        <section className="daily-fortune" aria-labelledby="daily-fortune-title">
+          <p className="prototype-label">오늘의 운세</p>
+          <h2 id="daily-fortune-title">오늘, 어디에 힘을 줄까요?</h2>
+          <p className="form-intro">
+            한국 시간의 오늘 일진과 계산된 내 사주를 함께 살펴봅니다. 생년월일과
+            출생시간 원문은 Gemini에 보내지 않습니다.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleDailyFortune()}
+            disabled={isDailyLoading}
+          >
+            {isDailyLoading
+              ? "오늘의 흐름을 읽고 있어요…"
+              : dailyResult
+                ? "오늘의 운세 다시 보기"
+                : "오늘의 운세 보기"}
+          </button>
+          {dailyError && <p className="error" role="alert">{dailyError}</p>}
+
+          {dailyResult && (
+            <section className="reading daily-result" aria-labelledby="daily-result-title">
+              <div className="reading-heading">
+                <div>
+                  <p className="result-label">
+                    {dailyResult.daily.dateLabel} · {dailyResult.daily.dayPillar.korean}일
+                  </p>
+                  <h2 id="daily-result-title">{dailyResult.fortune.headline}</h2>
+                </div>
+                <span className="sample-badge">{dailyResult.model}</span>
+              </div>
+              <div className="reading-grid">
+                {dailyResult.fortune.cards.map((card) => (
+                  <article className="reading-card" key={card.id}>
+                    <h3>{card.title}</h3>
+                    <p>{card.summary}</p>
+                    <p className="action">오늘의 행동: {card.action}</p>
+                    <details>
+                      <summary>왜 이렇게 읽었나요?</summary>
+                      <p>{card.evidence}</p>
+                    </details>
+                  </article>
+                ))}
+              </div>
+              <div className="daily-caution">
+                <strong>오늘의 주의점</strong>
+                <p>{dailyResult.fortune.caution}</p>
+              </div>
+              <p className="note">{dailyResult.fortune.disclaimer}</p>
             </section>
           )}
         </section>
