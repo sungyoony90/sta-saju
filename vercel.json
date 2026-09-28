@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-fortune-reminder",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

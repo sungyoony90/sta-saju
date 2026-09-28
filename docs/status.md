@@ -14,3 +14,4 @@ Spec을 만들면 아래 목록에 파일명을 추가합니다. 구현과 검�
 - [ ] `006-yearly-flow.md`
 - [ ] `007-reading-explainer.md`
 - [x] `008-daily-fortune.md`
+- [ ] `009-daily-slack-reminder.md`
