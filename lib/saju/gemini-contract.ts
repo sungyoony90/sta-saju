@@ -46,6 +46,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOnlyKeys(value: Record<string, unknown>, allowed: string[]) {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
 function stringField(
   value: unknown,
   name: string,
@@ -186,7 +190,12 @@ export function parseGeminiFollowUp(value: unknown): GeminiFollowUp {
 }
 
 export function parseGeminiDailyFortune(value: unknown): GeminiDailyFortune {
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.cards))
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["version", "headline", "cards", "caution", "disclaimer"]) ||
+    value.version !== 1 ||
+    !Array.isArray(value.cards)
+  )
     throw new GeminiContractError("오늘의 운세 결과 형식이 올바르지 않습니다.");
   if (value.cards.length !== 3)
     throw new GeminiContractError("오늘의 운세 카드가 세 개가 아닙니다.");
@@ -194,7 +203,12 @@ export function parseGeminiDailyFortune(value: unknown): GeminiDailyFortune {
   const allowed = new Set(["overall", "workMoney", "relationship"]);
   const seen = new Set<string>();
   const cards = value.cards.map((card) => {
-    if (!isRecord(card) || typeof card.id !== "string" || !allowed.has(card.id))
+    if (
+      !isRecord(card) ||
+      !hasOnlyKeys(card, ["id", "title", "summary", "evidence", "action"]) ||
+      typeof card.id !== "string" ||
+      !allowed.has(card.id)
+    )
       throw new GeminiContractError("오늘의 운세 카드 종류가 올바르지 않습니다.");
     if (seen.has(card.id))
       throw new GeminiContractError("오늘의 운세 카드 종류가 중복되었습니다.");
@@ -357,6 +371,7 @@ export const followUpResponseSchema = {
 
 export const dailyFortuneResponseSchema = {
   type: "object",
+  additionalProperties: false,
   properties: {
     version: { type: "integer", enum: [1] },
     headline: { type: "string" },
@@ -366,6 +381,7 @@ export const dailyFortuneResponseSchema = {
       maxItems: 3,
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           id: {
             type: "string",

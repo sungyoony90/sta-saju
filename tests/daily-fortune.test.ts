@@ -102,6 +102,27 @@ test("오늘의 운세 카드 종류가 중복된 Gemini 응답을 거절한다"
   );
 });
 
+test("오늘의 운세와 카드의 알 수 없는 추가 필드를 거절한다", () => {
+  assert.throws(
+    () =>
+      parseGeminiDailyFortune({
+        ...validDailyFortune,
+        internalReasoning: "표시하거나 저장하면 안 되는 필드",
+      }),
+    (error: unknown) => error instanceof GeminiContractError,
+  );
+  assert.throws(
+    () =>
+      parseGeminiDailyFortune({
+        ...validDailyFortune,
+        cards: validDailyFortune.cards.map((card, index) =>
+          index === 0 ? { ...card, hiddenScore: 99 } : card,
+        ),
+      }),
+    (error: unknown) => error instanceof GeminiContractError,
+  );
+});
+
 test("오늘의 운세 프롬프트에서 생년월일과 출생시간 원문을 제외한다", () => {
   const birthDate = "2005-12-23";
   const birthTime = "08:37";
@@ -131,13 +152,18 @@ test("daily API는 클라이언트가 보낸 날짜를 무시하고 서버의 �
   const originalFetch = globalThis.fetch;
   const clientDate = "2099-12-31";
   let prompt = "";
+  let responseSchema: Record<string, unknown> | undefined;
 
   process.env.GEMINI_API_KEY = "test-key-for-daily-contract";
   globalThis.fetch = (async (_input, init) => {
     const requestBody = JSON.parse(String(init?.body)) as {
       contents: Array<{ parts: Array<{ text: string }> }>;
+      generationConfig: {
+        responseFormat: { text: { schema: Record<string, unknown> } };
+      };
     };
     prompt = requestBody.contents[0].parts[0].text;
+    responseSchema = requestBody.generationConfig.responseFormat.text.schema;
     return new Response(
       JSON.stringify({
         candidates: [
@@ -158,7 +184,17 @@ test("daily API는 클라이언트가 보낸 날짜를 무시하고 서버의 �
       new Request("http://localhost/api/readings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "daily", chart, date: clientDate }),
+        body: JSON.stringify({
+          mode: "daily",
+          chart,
+          date: clientDate,
+          context: {
+            situation: "daily 프롬프트에 포함되면 안 되는 상담 원문",
+            question: "daily 프롬프트에 포함되면 안 되는 질문 원문",
+          },
+          kind: "lifetime",
+          summary: "daily 프롬프트에 포함되면 안 되는 전체 풀이 원문",
+        }),
       }),
     );
     expectedDates.add(getKoreanDate());
@@ -172,7 +208,17 @@ test("daily API는 클라이언트가 보낸 날짜를 무시하고 서버의 �
     assert.equal(payload.daily.timezone, "Asia/Seoul");
     assert.notEqual(payload.daily.date, clientDate);
     assert.doesNotMatch(prompt, new RegExp(clientDate));
+    assert.doesNotMatch(prompt, /상담 원문|질문 원문|전체 풀이 원문/);
     assert.match(prompt, new RegExp(payload.daily.date));
+    assert.deepEqual(
+      (
+        responseSchema as {
+          properties: { cards: { items: { properties: { id: { enum: string[] } } } } };
+        }
+      ).properties.cards.items.properties.id.enum,
+      ["overall", "workMoney", "relationship"],
+    );
+    assert.equal(JSON.stringify(responseSchema).includes("lifetime"), false);
     assert.deepEqual(payload.fortune, validDailyFortune);
   } finally {
     globalThis.fetch = originalFetch;
