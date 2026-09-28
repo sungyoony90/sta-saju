@@ -12,6 +12,13 @@ import {
   sanitizeContext,
   sanitizeConversation,
 } from "../../../lib/saju/gemini-contract";
+import { calculateYearFlow, getKoreanCurrentYear } from "../../../lib/saju/year-flow";
+import {
+  buildWholeReadingPrompt,
+  parseWholeReading,
+  wholeReadingResponseSchema,
+  type ReadingKind,
+} from "../../../lib/saju/whole-reading";
 
 export const runtime = "nodejs";
 
@@ -98,6 +105,23 @@ export async function POST(request: Request) {
   try {
     const raw = (await request.json()) as Record<string, unknown>;
     const chart = sanitizeChart(raw.chart);
+
+    if (raw.mode === "lifetime" || raw.mode === "yearly") {
+      const kind = raw.mode as ReadingKind;
+      const yearFlow = kind === "yearly"
+        ? calculateYearFlow(raw.targetYear, getKoreanCurrentYear())
+        : undefined;
+      const result = await callGemini(
+        buildWholeReadingPrompt(chart, kind, yearFlow),
+        wholeReadingResponseSchema(chart, kind, yearFlow),
+      );
+      if (result.error) return result.error;
+      return NextResponse.json({
+        model: GEMINI_MODEL,
+        reading: parseWholeReading(result.value, chart, kind, yearFlow),
+      });
+    }
+
     const context = sanitizeContext(raw.context);
 
     if (raw.mode === "followup") {

@@ -5,19 +5,24 @@ import {
   sanitizeChart,
   type GeminiReading,
 } from "./gemini-contract";
+import { parseWholeReading, type WholeReading } from "./whole-reading";
+import type { YearFlow } from "./year-flow";
+
+export type StoredReading = GeminiReading | WholeReading;
 
 export type SavedReading = {
   id: string;
   createdAt: string;
   chart: SajuChart;
-  reading: GeminiReading;
+  reading: StoredReading;
   model: string;
 };
 
 export function buildSavedReadingInsert(
   chart: SajuChart,
-  reading: GeminiReading,
+  reading: StoredReading,
   model: string,
+  yearFlow?: YearFlow,
 ) {
   const safeModel = model.trim();
   if (!safeModel || safeModel.length > 100)
@@ -25,7 +30,9 @@ export function buildSavedReadingInsert(
 
   return {
     chart: sanitizeChart(chart),
-    reading: parseGeminiReading(reading),
+    reading: reading.version === 2
+      ? parseWholeReading(reading, sanitizeChart(chart), reading.kind, yearFlow)
+      : parseGeminiReading(reading),
     model: safeModel,
   };
 }
@@ -49,7 +56,23 @@ export function parseSavedReading(value: unknown): SavedReading {
     id: row.id,
     createdAt: row.created_at,
     chart: sanitizeChart(row.chart),
-    reading: parseGeminiReading(row.reading),
+    reading: (() => {
+      const rawReading = row.reading as { version?: unknown; kind?: unknown; targetYear?: unknown };
+      if (rawReading?.version !== 2) return parseGeminiReading(row.reading);
+      const kind = rawReading.kind === "yearly" ? "yearly" : "lifetime";
+      const yearFlow = kind === "yearly" && typeof rawReading.targetYear === "number"
+        ? {
+            targetYear: rawReading.targetYear,
+            pillar: (() => {
+              const ref = (rawReading as WholeReading).sections.flatMap((section) => section.evidenceRefs).find((item) => item.startsWith("연주:"));
+              return ref?.slice(3) || "";
+            })(),
+            korean: "",
+            boundary: "입춘" as const,
+          }
+        : undefined;
+      return parseWholeReading(row.reading, sanitizeChart(row.chart), kind, yearFlow);
+    })(),
     model: row.model.trim(),
   };
 }
